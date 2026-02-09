@@ -4,8 +4,7 @@ Spring Boot 기반으로 구성한 `system-design-case-study` Week 1 실습 프�
 **Physical Database Separation (Hot Database)** 아키텍처가 적용되어 있습니다.
 
 ## Architecture
-
-<img width="745" height="640" alt="스크린샷 2026-02-09 오후 11 28 26" src="https://github.com/user-attachments/assets/ed9dc956-206c-4fb7-b80f-41a1835a2337" />
+<img width="693" height="679" alt="스크린샷 2026-02-09 오후 11 32 33" src="https://github.com/user-attachments/assets/43271cb9-3ed6-418e-90d4-050572fd5a13" />
 
 ### Database Separation
 이 프로젝트는 **트래픽이 집중되는 Hot Zone**을 물리적으로 분리된 데이터베이스에서 처리합니다.
