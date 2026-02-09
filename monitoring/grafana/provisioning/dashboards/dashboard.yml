@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: weeks1-proximity
+    orgId: 1
+    folder: Weeks1
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards
