@@ -1,0 +1,4 @@
+interface:
+  display_name: "근접성 서비스 구현"
+  short_description: "1장 근접성 서비스 구현 및 개선"
+  default_prompt: "$proximity-service-impl 스킬을 사용해 이 저장소의 1장 주변 사업장 서비스를 구현하거나 수정해줘."
