@@ -3,8 +3,10 @@ package com.systemdesigncasestudy.weeks1changha.indexsync.repository;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
+@Profile("!mysql")
 @Repository
 public class InMemoryGeohashIndexRepository implements GeohashIndexRepository {
 
