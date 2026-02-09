@@ -5,7 +5,7 @@ Spring Boot 기반으로 구성한 `system-design-case-study` Week 1 실습 프�
 
 ## Architecture
 
-![Architecture](https://mermaid.ink/img/pako:eNpVkM1qwzAQhF9F7NkG8gI-FAppIdBDoZTSNHsRytq7iS39k6wkhLx7V4qTQ08zs98ws4O0UoE0eB6_FqS1W8g72d1I9PZ62ZJst5TCN7jdbuR4Pst2u5F1XcsyL2QhG_m4X8liPkv1spDlciHLxUIW85ksZzP5uJjL5WwmHxcL+biYy3I2k4_zUj7O57KYz+XjYiHL2Vw+LubycTGT5WwmHxcLeZ-P5eN8Lov5XD4uFrKczeXjYi4fFzNZzmbycbGQ9_lYPq7uZSmr-Vw+LhaynM3l42IuHxczWc5m8nGxkPf5WD6u7mUpq_lcPi4WspzN5eNiLh8XM1nOZvJxge_zO3k_P8h2s5H1ciHL2Vw+LubycTGT5WwmHxcLeZ-P5et8L1/ne1nN5/JxsZDlbC4fF3P5uJjJcjaTj4uFvM_H8t_5Qd7PD7LdbGS9XMhyNpePi7l8XMxkOVvIx8VC3udj-Trfy9f5XlbdUj4uFrKczeXjYi4fFzNZzhbycbGQ9_lYvs738nW-l69zKcvZTD4uFvI-H8vX-V6-zveyms_l42Ihy9lcPi7m8nExk-VsJh8XC3mfj-XrfC9f53tZzefycXUny9lcPi7m8nExk-VsJh8XC3mfj-XrfC9f53tZzefycXUnK6l8XMzl42Imy9lMPi4W8j4fy9f5Xr7O97Kaz-XjYiHL2Vw-LubycTGT5WwmHxdb-f8H-P4B00Wq8w?type=png)
+<img width="745" height="640" alt="스크린샷 2026-02-09 오후 11 28 26" src="https://github.com/user-attachments/assets/ed9dc956-206c-4fb7-b80f-41a1835a2337" />
 
 ### Database Separation
 이 프로젝트는 **트래픽이 집중되는 Hot Zone**을 물리적으로 분리된 데이터베이스에서 처리합니다.
