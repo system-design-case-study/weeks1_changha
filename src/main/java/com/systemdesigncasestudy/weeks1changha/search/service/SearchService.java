@@ -29,6 +29,8 @@ public class SearchService {
     private final GeohashIndexRepository geohashIndexRepository;
     private final BusinessService businessService;
     private final GeoCellCache geoCellCache;
+    private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
+    private final com.systemdesigncasestudy.weeks1changha.indexsync.config.HotZoneConfigService hotZoneConfigService;
     private final int defaultLimit;
     private final int maxLimit;
     private final Timer searchLatencyTimer;
@@ -42,11 +44,14 @@ public class SearchService {
             BusinessService businessService,
             GeoCellCache geoCellCache,
             MeterRegistry meterRegistry,
+            com.systemdesigncasestudy.weeks1changha.indexsync.config.HotZoneConfigService hotZoneConfigService,
             @Value("${app.search.default-limit:20}") int defaultLimit,
             @Value("${app.search.max-limit:100}") int maxLimit) {
         this.geohashIndexRepository = geohashIndexRepository;
         this.businessService = businessService;
         this.geoCellCache = geoCellCache;
+        this.meterRegistry = meterRegistry;
+        this.hotZoneConfigService = hotZoneConfigService;
         this.defaultLimit = defaultLimit;
         this.maxLimit = maxLimit;
         this.searchLatencyTimer = Timer.builder("proximity.search.latency")
@@ -77,6 +82,15 @@ public class SearchService {
         try {
             int resolvedLimit = resolveLimit(limit);
             int offset = decodeCursor(cursor);
+
+            // Hot Zone Optimization: Dynamic Radius Capping via Config
+            // Check current location's geohash prefix against loaded config
+            String checkGeo = GeohashUtils.encode(latitude, longitude, 5);
+            var hotZoneConfig = hotZoneConfigService.findConfig(checkGeo);
+
+            if (hotZoneConfig.isPresent()) {
+                radius = Math.min(radius, hotZoneConfig.get().radiusLimit());
+            }
 
             int precision = precisionForRadius(radius);
             Set<String> geohashes = GeohashUtils.centerAndNeighbors(latitude, longitude, precision);
@@ -117,7 +131,7 @@ public class SearchService {
             int total = filtered.size();
             resultCountSummary.record(total);
             if (offset >= total) {
-                return new NearbySearchResponse(total, null, List.of());
+                return new NearbySearchResponse(total, radius, null, List.of());
             }
 
             int end = Math.min(offset + resolvedLimit, total);
@@ -135,7 +149,7 @@ public class SearchService {
             }
 
             String nextCursor = end < total ? encodeCursor(end) : null;
-            return new NearbySearchResponse(total, nextCursor, items);
+            return new NearbySearchResponse(total, radius, nextCursor, items);
         } finally {
             sample.stop(searchLatencyTimer);
         }
