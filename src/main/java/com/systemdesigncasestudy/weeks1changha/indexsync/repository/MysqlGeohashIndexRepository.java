@@ -1,23 +1,27 @@
 package com.systemdesigncasestudy.weeks1changha.indexsync.repository;
 
-import java.util.LinkedHashSet;
+import com.systemdesigncasestudy.weeks1changha.indexsync.config.HotZoneConfigService;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import org.springframework.context.annotation.Profile;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
-@Profile("mysql")
 @Repository
 public class MysqlGeohashIndexRepository implements GeohashIndexRepository {
 
-    private final JdbcTemplate jdbcTemplate;
-    private final com.systemdesigncasestudy.weeks1changha.indexsync.config.HotZoneConfigService hotZoneConfigService;
+    private final JdbcTemplate primaryJdbcTemplate;
+    private final JdbcTemplate hotJdbcTemplate;
+    private final HotZoneConfigService hotZoneConfigService;
 
-    public MysqlGeohashIndexRepository(JdbcTemplate jdbcTemplate,
-            com.systemdesigncasestudy.weeks1changha.indexsync.config.HotZoneConfigService hotZoneConfigService) {
-        this.jdbcTemplate = jdbcTemplate;
+    public MysqlGeohashIndexRepository(
+            @Qualifier("primaryJdbcTemplate") JdbcTemplate primaryJdbcTemplate,
+            @Qualifier("hotJdbcTemplate") JdbcTemplate hotJdbcTemplate,
+            HotZoneConfigService hotZoneConfigService) {
+        this.primaryJdbcTemplate = primaryJdbcTemplate;
+        this.hotJdbcTemplate = hotJdbcTemplate;
         this.hotZoneConfigService = hotZoneConfigService;
     }
 
@@ -25,34 +29,36 @@ public class MysqlGeohashIndexRepository implements GeohashIndexRepository {
     @Transactional
     public void upsert(String geohash, long businessId) {
         String tableName = getTableForGeohash(geohash);
+        JdbcTemplate targetTemplate = getTemplateForGeohash(geohash);
 
-        // Ensure we delete from both to avoid stale data if business moved zones
-        // (Optional: optimization would be check if zone changed, but simple is safe)
-        jdbcTemplate.update("DELETE FROM geohash_index WHERE business_id = ? AND geohash <> ?", businessId, geohash);
-        jdbcTemplate.update("DELETE FROM geohash_index_hot WHERE business_id = ? AND geohash <> ?", businessId,
-                geohash);
+        // Remove from the OTHER table/DB to ensure no stale data if zone changed
+        // This is expensive but safe. A better way would be knowing the old geohash.
+        if (targetTemplate == hotJdbcTemplate) {
+            primaryJdbcTemplate.update("DELETE FROM geohash_index WHERE business_id = ?", businessId);
+        } else {
+            hotJdbcTemplate.update("DELETE FROM geohash_index_hot WHERE business_id = ?", businessId);
+        }
 
-        jdbcTemplate.update(
-                "INSERT INTO " + tableName
-                        + " (geohash, business_id) VALUES (?, ?) ON DUPLICATE KEY UPDATE geohash = VALUES(geohash)",
-                geohash,
-                businessId);
+        String sql = String.format(
+                "INSERT INTO %s (geohash, business_id) VALUES (?, ?) ON DUPLICATE KEY UPDATE geohash = VALUES(geohash)",
+                tableName);
+        targetTemplate.update(sql, geohash, businessId);
     }
 
     @Override
+    @Transactional
     public void deleteByBusinessId(long businessId) {
-        jdbcTemplate.update("DELETE FROM geohash_index WHERE business_id = ?", businessId);
-        jdbcTemplate.update("DELETE FROM geohash_index_hot WHERE business_id = ?", businessId);
+        primaryJdbcTemplate.update("DELETE FROM geohash_index WHERE business_id = ?", businessId);
+        hotJdbcTemplate.update("DELETE FROM geohash_index_hot WHERE business_id = ?", businessId);
     }
 
     @Override
     public Set<Long> findBusinessIdsByPrefix(String geohashPrefix) {
         String tableName = getTableForGeohash(geohashPrefix);
-        List<Long> ids = jdbcTemplate.queryForList(
-                "SELECT business_id FROM " + tableName + " WHERE geohash LIKE CONCAT(?, '%')",
-                Long.class,
-                geohashPrefix);
-        return new LinkedHashSet<>(ids);
+        JdbcTemplate template = getTemplateForGeohash(geohashPrefix);
+        String sql = String.format("SELECT business_id FROM %s WHERE geohash LIKE ?", tableName);
+        List<Long> ids = template.queryForList(sql, Long.class, geohashPrefix + "%");
+        return new HashSet<>(ids);
     }
 
     private String getTableForGeohash(String geohash) {
@@ -60,5 +66,12 @@ public class MysqlGeohashIndexRepository implements GeohashIndexRepository {
             return "geohash_index_hot";
         }
         return "geohash_index";
+    }
+
+    private JdbcTemplate getTemplateForGeohash(String geohash) {
+        if (hotZoneConfigService.isHotZone(geohash)) {
+            return hotJdbcTemplate;
+        }
+        return primaryJdbcTemplate;
     }
 }

@@ -18,3 +18,14 @@ app:
   index-sync:
     delay-ms: 5000
     batch-size: 2000
+  datasource:
+    hot:
+      jdbc-url: jdbc:mysql://localhost:3312/weeks1?useSSL=false&allowPublicKeyRetrieval=true&connectionTimeZone=UTC&rewriteBatchedStatements=true
+      username: weeks1
+      password: weeks1
+      driver-class-name: com.mysql.cj.jdbc.Driver
+      hikari:
+        maximum-pool-size: 30
+        minimum-idle: 10
+        connection-timeout: 30000
+        max-lifetime: 1800000

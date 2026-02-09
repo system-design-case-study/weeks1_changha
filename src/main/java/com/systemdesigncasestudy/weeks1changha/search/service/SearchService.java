@@ -72,12 +72,15 @@ public class SearchService {
                 .register(meterRegistry);
     }
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(SearchService.class);
+
     public NearbySearchResponse searchNearby(
             double latitude,
             double longitude,
             int radius,
             Integer limit,
             String cursor) {
+        log.info("Search request: lat={}, lon={}, radius={}", latitude, longitude, radius);
         Timer.Sample sample = Timer.start();
         try {
             int resolvedLimit = resolveLimit(limit);
@@ -89,11 +92,15 @@ public class SearchService {
             var hotZoneConfig = hotZoneConfigService.findConfig(checkGeo);
 
             if (hotZoneConfig.isPresent()) {
+                log.info("Hot Zone detected: {}, capping radius to {}", hotZoneConfig.get().geohashPrefix(),
+                        hotZoneConfig.get().radiusLimit());
                 radius = Math.min(radius, hotZoneConfig.get().radiusLimit());
             }
 
-            int precision = precisionForRadius(radius);
+            int precision = precisionForRadius(radius); // e.g. 6 for 500m
             Set<String> geohashes = GeohashUtils.centerAndNeighbors(latitude, longitude, precision);
+            log.info("Searching geohashes (precision {}): {}", precision, geohashes);
+
             Set<Long> candidateBusinessIds = new LinkedHashSet<>();
 
             for (String geohash : geohashes) {
@@ -110,6 +117,7 @@ public class SearchService {
                 }
                 candidateBusinessIds.addAll(ids);
             }
+            log.info("Found {} candidate Business IDs: {}", candidateBusinessIds.size(), candidateBusinessIds);
 
             candidateCountSummary.record(candidateBusinessIds.size());
             List<SearchCandidate> filtered = new ArrayList<>();
