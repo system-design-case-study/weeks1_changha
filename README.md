@@ -134,3 +134,8 @@ SPRING_PROFILES_ACTIVE=mysql ./gradlew bootRun
 # 3. 검색 테스트
 curl "http://localhost:8080/v1/search/nearby?latitude=37.498&longitude=127.027&radius=1000"
 ```
+
+
+## Geohash
+실습 url : https://geohash.softeng.co/
+<img width="1009" height="511" alt="스크린샷 2026-02-10 오후 1 10 32" src="https://github.com/user-attachments/assets/cf4614fb-7553-4eb9-9450-b833755e6e90" />
