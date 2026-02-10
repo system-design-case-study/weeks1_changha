@@ -36,6 +36,7 @@
 
 ### Generated Data ###
 /data/
+/loadtest/results/
 
 ### Python ###
 __pycache__/

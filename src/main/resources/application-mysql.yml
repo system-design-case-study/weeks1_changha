@@ -5,9 +5,9 @@ spring:
     password: weeks1
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
-      maximum-pool-size: 30
-      minimum-idle: 10
-      connection-timeout: 30000
+      maximum-pool-size: 50
+      minimum-idle: 20
+      connection-timeout: 5000
       max-lifetime: 1800000
   sql:
     init:
@@ -25,7 +25,7 @@ app:
       password: weeks1
       driver-class-name: com.mysql.cj.jdbc.Driver
       hikari:
-        maximum-pool-size: 30
-        minimum-idle: 10
-        connection-timeout: 30000
+        maximum-pool-size: 50
+        minimum-idle: 20
+        connection-timeout: 5000
         max-lifetime: 1800000

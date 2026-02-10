@@ -4,6 +4,17 @@ spring:
   profiles:
     active: mysql
 
+server:
+  tomcat:
+    threads:
+      max: 400
+      min-spare: 50
+    accept-count: 200
+
+logging:
+  level:
+    com.systemdesigncasestudy.weeks1changha.search: INFO
+
 management:
   endpoints:
     web:

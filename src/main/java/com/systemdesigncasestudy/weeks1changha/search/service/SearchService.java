@@ -80,7 +80,7 @@ public class SearchService {
             int radius,
             Integer limit,
             String cursor) {
-        log.info("Search request: lat={}, lon={}, radius={}", latitude, longitude, radius);
+        log.debug("Search request: lat={}, lon={}, radius={}", latitude, longitude, radius);
         Timer.Sample sample = Timer.start();
         try {
             int resolvedLimit = resolveLimit(limit);
@@ -99,7 +99,7 @@ public class SearchService {
 
             int precision = precisionForRadius(radius); // e.g. 6 for 500m
             Set<String> geohashes = GeohashUtils.centerAndNeighbors(latitude, longitude, precision);
-            log.info("Searching geohashes (precision {}): {}", precision, geohashes);
+            log.debug("Searching geohashes (precision {}): {}", precision, geohashes);
 
             Set<Long> candidateBusinessIds = new LinkedHashSet<>();
 
@@ -117,7 +117,7 @@ public class SearchService {
                 }
                 candidateBusinessIds.addAll(ids);
             }
-            log.info("Found {} candidate Business IDs: {}", candidateBusinessIds.size(), candidateBusinessIds);
+            log.debug("Found {} candidate Business IDs: {}", candidateBusinessIds.size(), candidateBusinessIds);
 
             candidateCountSummary.record(candidateBusinessIds.size());
             List<SearchCandidate> filtered = new ArrayList<>();

@@ -96,3 +96,74 @@ Hot Zone 테스트를 위해 특정 구역(`wydm`) 데이터를 Hot DB에 적재
 scripts/load_dummy_data_mysql.sh --data-dir data/dummy --create-schema --truncate
 ```
 *Note: Hot DB 스키마 및 데이터 동기화는 현재 별도 수동 설정이 필요할 수 있습니다. (실습 범위)*
+
+## Load Test (k6)
+
+### 목적
+- 목적 1: k6 실행/리포트 파이프라인이 정상 동작하는지 검증
+- 목적 2: 현재 로컬 단일 인스턴스 기준 안정 처리량(Stable QPS) 구간 파악
+- 목적 3: SLA 기준(`references/sla.md`)과의 차이 확인
+- 목적 4: 목표 트래픽(5,000 QPS) 대비 병목 구간 사전 식별
+
+### 준비
+- 앱 실행: `SPRING_PROFILES_ACTIVE=mysql ./gradlew bootRun`
+- SLA 기준: `references/sla.md`
+
+### 실행
+```bash
+scripts/run_k6.sh --rate 1000 --duration 60s
+```
+
+기본값:
+- `rate=5000`
+- `duration=60s`
+- `base-url=http://localhost:8080`
+
+결과:
+- `loadtest/results/<timestamp>/summary.json`
+- `loadtest/results/<timestamp>/report.md`
+
+로컬에 `k6`가 없으면 Docker(`grafana/k6`)로 자동 실행됩니다.
+
+### Ramp Test (1k -> 2k -> 5k)
+```bash
+scripts/run_k6_ramp.sh
+```
+
+경계 구간 확인용 실행 예시:
+```bash
+scripts/run_k6_ramp.sh \
+  --rates 200,500,1000 \
+  --durations 60s,60s,120s \
+  --stage-names low,mid,high
+```
+
+결과:
+- `loadtest/results/ramp_<timestamp>/ramp_report.md`
+- `loadtest/results/ramp_<timestamp>/ramp_summary.csv`
+- stage별 raw 결과: `loadtest/results/ramp_<timestamp>/<stage>/<timestamp>/`
+
+### 최근 실행 결과 요약 (2026-02-10)
+
+아래 수치는 모두 로컬 단일 인스턴스 환경에서 측정한 결과입니다.
+
+| Run | Stage | Target QPS | Achieved QPS | p95(ms) | Dropped | Verdict | 비고 |
+|---|---|---:|---:|---:|---:|---|---|
+| `ramp_200_500_1000` | low | 200 | 200.00 | 54.43 | 0 | PASS | - |
+| `ramp_200_500_1000` | mid | 500 | 499.99 | 9.16 | 0 | PASS | - |
+| `ramp_200_500_1000` | high | 1000 | 1012.82 | 58.15 | 592 | FAIL | dropped 발생으로 FAIL |
+| `ramp_200_500_1000_rerun_20260210_104737` | low | 200 | 200.00 | 19.19 | 0 | PASS | - |
+| `ramp_200_500_1000_rerun_20260210_104737` | mid | 500 | 499.96 | 70.20 | 0 | PASS | - |
+| `ramp_200_500_1000_rerun_20260210_104737` | high | 1000 | 972.05 | 225.63 | 3047 | FAIL | `p95<=150ms` 미충족 + dropped 증가 |
+
+주요 아티팩트:
+- `loadtest/results/ramp_200_500_1000/ramp_report.md`
+- `loadtest/results/ramp_200_500_1000/ramp_summary.csv`
+- `loadtest/results/ramp_200_500_1000_rerun_20260210_104737/ramp_report.md`
+- `loadtest/results/ramp_200_500_1000_rerun_20260210_104737/ramp_summary.csv`
+
+### 목적별 해석
+- 목적 1 (실행 파이프라인 검증): 달성. `run_k6.sh`, `run_k6_ramp.sh`, summary/report 생성이 정상 동작함.
+- 목적 2 (안정 처리량 파악): 현재 결과 기준으로 `500 QPS`까지는 안정, `1000 QPS`는 불안정.
+- 목적 3 (SLA 갭 확인): 1000 QPS 재실행에서 `p95 225.63ms`로 SLA(`<=150ms`) 미충족.
+- 목적 4 (5,000 QPS 대비): 현재 안정 구간(<=500 QPS)과 목표(5,000 QPS) 사이 갭이 큼.
