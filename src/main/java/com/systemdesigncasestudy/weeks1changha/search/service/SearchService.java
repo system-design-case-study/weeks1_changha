@@ -12,9 +12,9 @@ import io.micrometer.core.instrument.Timer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -65,49 +65,45 @@ public class SearchService {
             int resolvedLimit = resolveLimit(limit);
             int offset = decodeCursor(cursor);
 
-            // Redis GEOSEARCH: single call replaces 9-cell MySQL LIKE loop
-            Set<Long> candidateBusinessIds = redisGeoIndexRepository.findByRadius(
+            // Redis GEOSEARCH: returns IDs sorted by distance ascending
+            List<Long> sortedCandidateIds = redisGeoIndexRepository.findByRadius(
                     latitude, longitude, radius);
 
-            log.debug("Redis GEOSEARCH returned {} candidates", candidateBusinessIds.size());
-            candidateCountSummary.record(candidateBusinessIds.size());
+            log.debug("Redis GEOSEARCH returned {} candidates", sortedCandidateIds.size());
+            candidateCountSummary.record(sortedCandidateIds.size());
 
-            if (candidateBusinessIds.isEmpty()) {
-                return new NearbySearchResponse(0, radius, null, List.of());
-            }
-
-            // Fetch active businesses and compute distance for sorting
-            List<Business> businesses = businessService.findAllActiveByIds(candidateBusinessIds);
-            List<SearchCandidate> filtered = new ArrayList<>();
-
-            for (Business business : businesses) {
-                double distance = GeoDistance.haversineMeters(
-                        latitude, longitude,
-                        business.latitude(), business.longitude());
-                // Redis already filters by radius, but re-check for safety
-                if (distance <= radius) {
-                    filtered.add(new SearchCandidate(business, distance));
-                }
-            }
-
-            filtered.sort(Comparator.comparingDouble(SearchCandidate::distanceMeters));
-            int total = filtered.size();
+            int total = sortedCandidateIds.size();
             resultCountSummary.record(total);
 
-            if (offset >= total) {
+            if (total == 0 || offset >= total) {
                 return new NearbySearchResponse(total, radius, null, List.of());
             }
 
+            // Only fetch business details for the current page (not all candidates)
             int end = Math.min(offset + resolvedLimit, total);
+            List<Long> pageIds = sortedCandidateIds.subList(offset, end);
+
+            List<Business> businesses = businessService.findAllActiveByIds(pageIds);
+
+            // Build response maintaining Redis distance order
+            Map<Long, Business> businessMap = new HashMap<>();
+            for (Business b : businesses) {
+                businessMap.put(b.id(), b);
+            }
+
             List<NearbyBusinessItem> items = new ArrayList<>();
-            for (int i = offset; i < end; i++) {
-                SearchCandidate candidate = filtered.get(i);
-                Business business = candidate.business();
+            for (Long id : pageIds) {
+                Business business = businessMap.get(id);
+                if (business == null)
+                    continue;
+                double distance = GeoDistance.haversineMeters(
+                        latitude, longitude,
+                        business.latitude(), business.longitude());
                 items.add(new NearbyBusinessItem(
                         business.id(),
                         business.name(),
                         business.category(),
-                        Math.round(candidate.distanceMeters()),
+                        Math.round(distance),
                         business.latitude(),
                         business.longitude()));
             }
@@ -151,6 +147,4 @@ public class SearchService {
                 .encodeToString(String.valueOf(offset).getBytes(StandardCharsets.UTF_8));
     }
 
-    private record SearchCandidate(Business business, double distanceMeters) {
-    }
 }
