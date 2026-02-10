@@ -43,6 +43,17 @@ Spring Boot 기반 근접 검색 서비스. MySQL Geohash → Redis Geohash로�
 
 Redis `GEORADIUS`로 검색 읽기 경로에서 MySQL을 완전히 제거.
 
+Redis 명령어중에서 `ANY` 와 `COUNT`의 차이점을 구별하고 알게되었음.
+
+
+**`ANY`** : 해당 거리안에 무작위로 요청 개수만큼 채워지면 바로 반환 
+
+
+**`COUNT`** : 해당 거리안에 포함되는 모든 데이터를 찾고 정렬하여 반환
+
+
+-> 나 같은 경우는 페이징을 적용하기 때문에 `ANY`를 사용할 때 다음 페이지에서 중복되는 결과가 나오는 오류가 있을 수 있음. 따라서 `COUNT`만으로 활용
+
 #### Before → After
 
 | | Before (MySQL) | After (Redis) |
