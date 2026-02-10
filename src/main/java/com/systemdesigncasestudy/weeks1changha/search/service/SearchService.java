@@ -2,13 +2,10 @@ package com.systemdesigncasestudy.weeks1changha.search.service;
 
 import com.systemdesigncasestudy.weeks1changha.business.domain.Business;
 import com.systemdesigncasestudy.weeks1changha.business.service.BusinessService;
-import com.systemdesigncasestudy.weeks1changha.cache.GeoCellCache;
 import com.systemdesigncasestudy.weeks1changha.geo.GeoDistance;
-import com.systemdesigncasestudy.weeks1changha.geo.GeohashUtils;
-import com.systemdesigncasestudy.weeks1changha.indexsync.repository.GeohashIndexRepository;
+import com.systemdesigncasestudy.weeks1changha.indexsync.repository.RedisGeoIndexRepository;
 import com.systemdesigncasestudy.weeks1changha.search.dto.NearbyBusinessItem;
 import com.systemdesigncasestudy.weeks1changha.search.dto.NearbySearchResponse;
-import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -16,9 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -26,53 +21,37 @@ import org.springframework.stereotype.Service;
 @Service
 public class SearchService {
 
-    private final GeohashIndexRepository geohashIndexRepository;
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(SearchService.class);
+
+    private final RedisGeoIndexRepository redisGeoIndexRepository;
     private final BusinessService businessService;
-    private final GeoCellCache geoCellCache;
-    private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
-    private final com.systemdesigncasestudy.weeks1changha.indexsync.config.HotZoneConfigService hotZoneConfigService;
     private final int defaultLimit;
     private final int maxLimit;
     private final Timer searchLatencyTimer;
-    private final Counter geoCacheHitCounter;
-    private final Counter geoCacheMissCounter;
     private final DistributionSummary candidateCountSummary;
     private final DistributionSummary resultCountSummary;
 
     public SearchService(
-            GeohashIndexRepository geohashIndexRepository,
+            RedisGeoIndexRepository redisGeoIndexRepository,
             BusinessService businessService,
-            GeoCellCache geoCellCache,
             MeterRegistry meterRegistry,
-            com.systemdesigncasestudy.weeks1changha.indexsync.config.HotZoneConfigService hotZoneConfigService,
             @Value("${app.search.default-limit:20}") int defaultLimit,
             @Value("${app.search.max-limit:100}") int maxLimit) {
-        this.geohashIndexRepository = geohashIndexRepository;
+        this.redisGeoIndexRepository = redisGeoIndexRepository;
         this.businessService = businessService;
-        this.geoCellCache = geoCellCache;
-        this.meterRegistry = meterRegistry;
-        this.hotZoneConfigService = hotZoneConfigService;
         this.defaultLimit = defaultLimit;
         this.maxLimit = maxLimit;
         this.searchLatencyTimer = Timer.builder("proximity.search.latency")
                 .description("Latency for nearby search requests")
                 .publishPercentileHistogram()
                 .register(meterRegistry);
-        this.geoCacheHitCounter = Counter.builder("proximity.search.geo.cache.hit")
-                .description("Geo-cell cache hits")
-                .register(meterRegistry);
-        this.geoCacheMissCounter = Counter.builder("proximity.search.geo.cache.miss")
-                .description("Geo-cell cache misses")
-                .register(meterRegistry);
         this.candidateCountSummary = DistributionSummary.builder("proximity.search.candidate.count")
-                .description("Number of candidate business IDs gathered before distance filtering")
+                .description("Number of candidate business IDs from Redis GEOSEARCH")
                 .register(meterRegistry);
         this.resultCountSummary = DistributionSummary.builder("proximity.search.result.count")
                 .description("Number of businesses returned after filtering")
                 .register(meterRegistry);
     }
-
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(SearchService.class);
 
     public NearbySearchResponse searchNearby(
             double latitude,
@@ -86,50 +65,26 @@ public class SearchService {
             int resolvedLimit = resolveLimit(limit);
             int offset = decodeCursor(cursor);
 
-            // Hot Zone Optimization: Dynamic Radius Capping via Config
-            // Check current location's geohash prefix against loaded config
-            String checkGeo = GeohashUtils.encode(latitude, longitude, 5);
-            var hotZoneConfig = hotZoneConfigService.findConfig(checkGeo);
+            // Redis GEOSEARCH: single call replaces 9-cell MySQL LIKE loop
+            Set<Long> candidateBusinessIds = redisGeoIndexRepository.findByRadius(
+                    latitude, longitude, radius);
 
-            if (hotZoneConfig.isPresent()) {
-                log.info("Hot Zone detected: {}, capping radius to {}", hotZoneConfig.get().geohashPrefix(),
-                        hotZoneConfig.get().radiusLimit());
-                radius = Math.min(radius, hotZoneConfig.get().radiusLimit());
-            }
-
-            int precision = precisionForRadius(radius); // e.g. 6 for 500m
-            Set<String> geohashes = GeohashUtils.centerAndNeighbors(latitude, longitude, precision);
-            log.debug("Searching geohashes (precision {}): {}", precision, geohashes);
-
-            Set<Long> candidateBusinessIds = new LinkedHashSet<>();
-
-            for (String geohash : geohashes) {
-                String cacheKey = "geo:" + precision + ":" + geohash;
-                Optional<List<Long>> cachedIds = geoCellCache.get(cacheKey);
-                List<Long> ids;
-                if (cachedIds.isPresent()) {
-                    geoCacheHitCounter.increment();
-                    ids = cachedIds.get();
-                } else {
-                    geoCacheMissCounter.increment();
-                    ids = new ArrayList<>(geohashIndexRepository.findBusinessIdsByPrefix(geohash));
-                    geoCellCache.put(cacheKey, ids);
-                }
-                candidateBusinessIds.addAll(ids);
-            }
-            log.debug("Found {} candidate Business IDs: {}", candidateBusinessIds.size(), candidateBusinessIds);
-
+            log.debug("Redis GEOSEARCH returned {} candidates", candidateBusinessIds.size());
             candidateCountSummary.record(candidateBusinessIds.size());
-            List<SearchCandidate> filtered = new ArrayList<>();
+
+            if (candidateBusinessIds.isEmpty()) {
+                return new NearbySearchResponse(0, radius, null, List.of());
+            }
+
+            // Fetch active businesses and compute distance for sorting
             List<Business> businesses = businessService.findAllActiveByIds(candidateBusinessIds);
+            List<SearchCandidate> filtered = new ArrayList<>();
 
             for (Business business : businesses) {
-
                 double distance = GeoDistance.haversineMeters(
-                        latitude,
-                        longitude,
-                        business.latitude(),
-                        business.longitude());
+                        latitude, longitude,
+                        business.latitude(), business.longitude());
+                // Redis already filters by radius, but re-check for safety
                 if (distance <= radius) {
                     filtered.add(new SearchCandidate(business, distance));
                 }
@@ -138,6 +93,7 @@ public class SearchService {
             filtered.sort(Comparator.comparingDouble(SearchCandidate::distanceMeters));
             int total = filtered.size();
             resultCountSummary.record(total);
+
             if (offset >= total) {
                 return new NearbySearchResponse(total, radius, null, List.of());
             }
@@ -193,22 +149,6 @@ public class SearchService {
     private String encodeCursor(int offset) {
         return Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(String.valueOf(offset).getBytes(StandardCharsets.UTF_8));
-    }
-
-    private int precisionForRadius(int radiusMeters) {
-        if (radiusMeters <= 300) {
-            return 7;
-        }
-        if (radiusMeters <= 1_000) {
-            return 6;
-        }
-        if (radiusMeters <= 5_000) {
-            return 5;
-        }
-        if (radiusMeters <= 20_000) {
-            return 4;
-        }
-        return 3;
     }
 
     private record SearchCandidate(Business business, double distanceMeters) {

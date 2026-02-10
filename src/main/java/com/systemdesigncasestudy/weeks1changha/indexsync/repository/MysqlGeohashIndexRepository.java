@@ -15,24 +15,38 @@ public class MysqlGeohashIndexRepository implements GeohashIndexRepository {
     private final JdbcTemplate primaryJdbcTemplate;
     private final JdbcTemplate hotJdbcTemplate;
     private final HotZoneConfigService hotZoneConfigService;
+    private final RedisGeoIndexRepository redisGeoIndexRepository;
 
     public MysqlGeohashIndexRepository(
             @Qualifier("primaryJdbcTemplate") JdbcTemplate primaryJdbcTemplate,
             @Qualifier("hotJdbcTemplate") JdbcTemplate hotJdbcTemplate,
-            HotZoneConfigService hotZoneConfigService) {
+            HotZoneConfigService hotZoneConfigService,
+            RedisGeoIndexRepository redisGeoIndexRepository) {
         this.primaryJdbcTemplate = primaryJdbcTemplate;
         this.hotJdbcTemplate = hotJdbcTemplate;
         this.hotZoneConfigService = hotZoneConfigService;
+        this.redisGeoIndexRepository = redisGeoIndexRepository;
     }
 
     @Override
     @Transactional
     public void upsert(String geohash, long businessId) {
+        upsertMysql(geohash, businessId);
+    }
+
+    @Override
+    @Transactional
+    public void upsertWithCoordinates(String geohash, long businessId, double latitude, double longitude) {
+        upsertMysql(geohash, businessId);
+        // Sync to Redis GeoSet
+        redisGeoIndexRepository.add(businessId, latitude, longitude);
+    }
+
+    private void upsertMysql(String geohash, long businessId) {
         String tableName = getTableForGeohash(geohash);
         JdbcTemplate targetTemplate = getTemplateForGeohash(geohash);
 
         // Remove from the OTHER table/DB to ensure no stale data if zone changed
-        // This is expensive but safe. A better way would be knowing the old geohash.
         if (targetTemplate == hotJdbcTemplate) {
             primaryJdbcTemplate.update("DELETE FROM geohash_index WHERE business_id = ?", businessId);
         } else {
@@ -50,6 +64,8 @@ public class MysqlGeohashIndexRepository implements GeohashIndexRepository {
     public void deleteByBusinessId(long businessId) {
         primaryJdbcTemplate.update("DELETE FROM geohash_index WHERE business_id = ?", businessId);
         hotJdbcTemplate.update("DELETE FROM geohash_index_hot WHERE business_id = ?", businessId);
+        // Also remove from Redis
+        redisGeoIndexRepository.remove(businessId);
     }
 
     @Override

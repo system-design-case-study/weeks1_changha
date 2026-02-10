@@ -30,6 +30,12 @@ public class InMemoryGeohashIndexRepository implements GeohashIndexRepository {
     }
 
     @Override
+    public synchronized void upsertWithCoordinates(String geohash, long businessId, double latitude, double longitude) {
+        // In-memory profile has no Redis; just delegate to regular upsert.
+        upsert(geohash, businessId);
+    }
+
+    @Override
     public synchronized void deleteByBusinessId(long businessId) {
         String geohash = businessIdToGeohash.remove(businessId);
         if (geohash == null) {
