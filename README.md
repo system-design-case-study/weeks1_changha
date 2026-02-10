@@ -79,7 +79,7 @@ Hot Zone DB의 목적은 **MySQL 읽기 부하 분산**이었다. Redis 도입 �
 
 ## 트러블슈팅 기록
 
-### 1. Redis 전환 후에도 MySQL 조회가 병목이었던 이유
+### Redis 전환 후에도 MySQL 조회가 병목이었던 이유
 
 Redis가 5000개 ID를 반환하면, `businessService.findAllActiveByIds(5000개)`로 **전체를 MySQL에서 조회**하고 있었다.
 
@@ -91,19 +91,6 @@ Redis가 5000개 ID를 반환하면, `businessService.findAllActiveByIds(5000개
 Before: Redis 5000개 → MySQL 5000개 조회 → 정렬 → 20개 반환
 After:  Redis 5000개 ID → 상위 20개만 MySQL 조회 → 바로 반환
 ```
-
-### 2. RedisGeoDataLoader: 기존 데이터 이관
-
-Redis 통합 전에 이미 19만 건의 비즈니스가 MySQL에 존재. 이 데이터를 Redis에 넣기 위해 `CommandLineRunner`로 앱 시작 시 벌크 로드 구현.
-
-- Redis가 비어있으면 MySQL에서 active 비즈니스를 조회 → `GEOADD`
-- ~16초에 195,894건 적재
-
-### 3. Dual Write 전략
-
-신규 변경은 `IndexSyncService`에서 MySQL + Redis 동시 쓰기.
-- `upsertWithCoordinates(geohash, businessId, lat, lon)`: MySQL INSERT + Redis GEOADD
-- `deleteByBusinessId`: MySQL DELETE + Redis ZREM
 
 ---
 
