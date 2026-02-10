@@ -33,6 +33,7 @@ Spring Boot 기반 근접 검색 서비스. MySQL Geohash → Redis Geohash로�
 
 - `HotZoneConfigService`가 geohash prefix 기반으로 라우팅
 - 반경 제한(radius capping)으로 과도한 후보 수 억제
+- ConcurrentHashMap + @Schedule로 HotZone 여부 관리
 
 **효과**: Primary DB 부하 감소.
 **한계**: 근본적으로 `LIKE` × 9셀 비효율은 그대로. Hot Zone이 늘어날수록 관리 복잡도 증가.
